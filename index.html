@@ -599,7 +599,12 @@
           model: 'models/gemini-3.5-live-translate-preview',
           generationConfig: {
             responseModalities: ['AUDIO'],
-            translationConfig: { targetLanguageCode: myTargetLang }
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
+            translationConfig: {
+              targetLanguageCode: myTargetLang,
+              echoTargetLanguage: true
+            }
           }
         }
       };
@@ -609,9 +614,15 @@
 
     ws.onmessage = (event) => {
       const response = JSON.parse(event.data);
-      if (response.serverContent?.modelTurn?.parts) {
-        response.serverContent.modelTurn.parts.forEach((part) => {
-          if (part.text) log('Translation: ' + part.text);
+      const content = response.serverContent;
+      if (content?.inputTranscription?.text) {
+        log('Heard: ' + content.inputTranscription.text);
+      }
+      if (content?.outputTranscription?.text) {
+        log('Translated: ' + content.outputTranscription.text);
+      }
+      if (content?.modelTurn?.parts) {
+        content.modelTurn.parts.forEach((part) => {
           if (part.inlineData && part.inlineData.mimeType.startsWith('audio/pcm')) {
             playTranslatedAudioChunk(part.inlineData.data);
           }
@@ -640,7 +651,7 @@
       const base64Audio = arrayBufferToBase64(pcm16.buffer);
       ws.send(JSON.stringify({
         realtimeInput: {
-          mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: base64Audio }]
+          audio: { data: base64Audio, mimeType: 'audio/pcm;rate=16000' }
         }
       }));
     };
