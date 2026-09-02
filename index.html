@@ -234,6 +234,35 @@
     white-space: pre-wrap;
   }
 
+  .transcript-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.7rem;
+  }
+
+  .transcript-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 0.35rem;
+  }
+
+  .transcript-box {
+    background: #f4f6f5;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.65rem 0.7rem;
+    min-height: 4.5rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    color: var(--ink);
+  }
+
+  .transcript-box.placeholder {
+    color: var(--muted);
+    font-style: italic;
+  }
+
   .log-entry { margin-bottom: 0.2rem; }
   .log-entry.warn { color: #f0c36d; }
   .log-entry.err { color: #ff9585; }
@@ -341,10 +370,29 @@
     </div>
   </section>
 
-  <!-- Step 4: Log -->
+  <!-- Step 4: Live transcript -->
   <section class="step">
     <div class="step-head">
       <span class="step-num">4</span>
+      <h2>Live transcript</h2>
+    </div>
+    <p class="hint" style="margin-top:-0.4rem; margin-bottom:0.9rem;">Confirms whether Gemini is actually hearing and translating — same idea as the Input/Output transcript panes in AI Studio.</p>
+    <div class="transcript-grid">
+      <div class="transcript-col">
+        <div class="transcript-label">Heard (original)</div>
+        <div class="transcript-box" id="inputTranscriptBox">Waiting for speech…</div>
+      </div>
+      <div class="transcript-col">
+        <div class="transcript-label">Translated</div>
+        <div class="transcript-box" id="outputTranscriptBox">Waiting for speech…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Step 5: Log -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">5</span>
       <h2>Activity log</h2>
     </div>
     <div id="logs"></div>
@@ -402,6 +450,8 @@
   const stepIncoming  = el('stepIncoming');
   const answerBtn     = el('answerBtn');
   const declineBtn    = el('declineBtn');
+  const inputTranscriptBox  = el('inputTranscriptBox');
+  const outputTranscriptBox = el('outputTranscriptBox');
 
   let pendingCall = null;
 
@@ -427,6 +477,21 @@
   function setKeyStatus(state, text) {
     keyDot.className = 'dot ' + state;
     keyStatusText.textContent = text;
+  }
+
+  function resetTranscripts() {
+    inputTranscriptBox.textContent = 'Waiting for speech…';
+    inputTranscriptBox.classList.add('placeholder');
+    outputTranscriptBox.textContent = 'Waiting for speech…';
+    outputTranscriptBox.classList.add('placeholder');
+  }
+
+  function appendTranscript(box, text) {
+    if (box.classList.contains('placeholder')) {
+      box.textContent = '';
+      box.classList.remove('placeholder');
+    }
+    box.textContent += text;
   }
 
   apiKeyInput.addEventListener('input', () => {
@@ -602,6 +667,7 @@
 
   function bindCall(call) {
     activeCall = call;
+    resetTranscripts();
     initGeminiLive();
 
     // Let the user abort a stuck/never-connecting call instead of being
@@ -704,9 +770,15 @@
       const content = response.serverContent;
       if (content?.inputTranscription?.text) {
         log('Heard: ' + content.inputTranscription.text);
+        appendTranscript(inputTranscriptBox, content.inputTranscription.text);
       }
       if (content?.outputTranscription?.text) {
         log('Translated: ' + content.outputTranscription.text);
+        appendTranscript(outputTranscriptBox, content.outputTranscription.text);
+      }
+      if (content?.turnComplete) {
+        appendTranscript(inputTranscriptBox, ' ');
+        appendTranscript(outputTranscriptBox, ' ');
       }
       if (content?.modelTurn?.parts) {
         content.modelTurn.parts.forEach((part) => {
@@ -733,9 +805,30 @@
     const source = micAudioContext.createMediaStreamSource(stream);
     const processor = micAudioContext.createScriptProcessor(4096, 1, 1);
 
+    let frameCount = 0;
+    let sawSound = false;
+
     processor.onaudioprocess = (e) => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
       const inputData = e.inputBuffer.getChannelData(0);
+
+      // Periodic diagnostic: show whether real (non-silent) audio is
+      // actually reaching this pipeline, independent of Gemini.
+      frameCount++;
+      if (frameCount % 20 === 0) {
+        let peak = 0;
+        for (let i = 0; i < inputData.length; i++) {
+          const abs = Math.abs(inputData[i]);
+          if (abs > peak) peak = abs;
+        }
+        if (peak > 0.02 && !sawSound) {
+          sawSound = true;
+          log('Mic level OK — receiving real audio (peak ' + peak.toFixed(2) + ').');
+        } else if (peak <= 0.02) {
+          log('Mic level near silent (peak ' + peak.toFixed(3) + ') — check the source is actually speaking into this side.', 'warn');
+        }
+      }
+
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
       const pcm16 = floatTo16BitPCM(inputData);
       const base64Audio = arrayBufferToBase64(pcm16.buffer);
       ws.send(JSON.stringify({
