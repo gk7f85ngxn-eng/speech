@@ -1,275 +1,625 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Live Malay-Bangla Interpreter Call</title>
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      max-width: 800px;
-      margin: 2rem auto;
-      padding: 0 1rem;
-      background: #f4f6f8;
-    }
-    .card {
-      background: #fff;
-      padding: 1.5rem;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-      margin-bottom: 1rem;
-    }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-    label { display: block; margin-bottom: 0.3rem; font-weight: bold; }
-    input, select, button {
-      width: 100%;
-      padding: 0.6rem;
-      border-radius: 6px;
-      border: 1px solid #ccc;
-      box-sizing: border-box;
-      margin-bottom: 0.8rem;
-    }
-    button { background: #0066ff; color: #fff; font-weight: bold; border: none; cursor: pointer; }
-    button:disabled { background: #999; }
-    #logs {
-      background: #1e1e1e;
-      color: #00ff88;
-      font-family: monospace;
-      padding: 1rem;
-      border-radius: 8px;
-      height: 250px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Live Malay–Bangla Interpreter Call</title>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<style>
+  :root {
+    --ink: #1c2b2a;
+    --paper: #eef2f0;
+    --card: #ffffff;
+    --line: #d7ddda;
+    --muted: #64726f;
+    --accent: #1f6f5c;
+    --accent-ink: #ffffff;
+    --live: #d9822b;
+    --ok: #1f6f5c;
+    --err: #b3413a;
+    --radius: 10px;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    margin: 0;
+    padding: 1.25rem;
+    line-height: 1.45;
+  }
+
+  .wrap {
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  header {
+    margin-bottom: 1.5rem;
+  }
+
+  header h1 {
+    font-size: 1.3rem;
+    margin: 0 0 0.2rem;
+    letter-spacing: -0.01em;
+  }
+
+  header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  .step {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.1rem 1.25rem;
+    margin-bottom: 1rem;
+  }
+
+  .step[data-disabled="true"] {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .step-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .step-num {
+    flex: 0 0 auto;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    background: var(--ink);
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .step-head h2 {
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 0.3rem;
+  }
+
+  .field {
+    margin-bottom: 0.85rem;
+  }
+
+  .field:last-child {
+    margin-bottom: 0;
+  }
+
+  input[type="text"],
+  input[type="password"],
+  select {
+    width: 100%;
+    padding: 0.6rem 0.65rem;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #fbfcfb;
+    font-size: 0.95rem;
+    color: var(--ink);
+  }
+
+  input:focus, select:focus, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .hint {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 0.3rem;
+  }
+
+  .row {
+    display: flex;
+    gap: 0.6rem;
+  }
+
+  .row > * { flex: 1; }
+
+  button {
+    padding: 0.65rem 1rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+    font-size: 0.92rem;
+    cursor: pointer;
+  }
+
+  button:disabled {
+    background: #b7c2be;
+    cursor: not-allowed;
+  }
+
+  button.secondary {
+    background: transparent;
+    color: var(--ink);
+    border-color: var(--line);
+  }
+
+  button.danger {
+    background: var(--err);
+  }
+
+  .id-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    background: #f4f6f5;
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .id-box code {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    word-break: break-all;
+  }
+
+  .id-box button {
+    flex: 0 0 auto;
+    padding: 0.35rem 0.65rem;
+    font-size: 0.8rem;
+  }
+
+  .status-line {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    margin-bottom: 0.85rem;
+  }
+
+  .dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    background: var(--muted);
+    flex: 0 0 auto;
+  }
+
+  .dot.connecting { background: var(--live); animation: pulse 1.1s infinite ease-in-out; }
+  .dot.connected { background: var(--ok); }
+  .dot.error { background: var(--err); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  .controls {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+
+  .controls button { flex: 1 1 auto; min-width: 8rem; }
+
+  #logs {
+    background: #14201e;
+    color: #b9e2d4;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    padding: 0.85rem;
+    border-radius: 8px;
+    height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+
+  .log-entry { margin-bottom: 0.2rem; }
+  .log-entry.warn { color: #f0c36d; }
+  .log-entry.err { color: #ff9585; }
+
+  footer {
+    text-align: center;
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 1.5rem;
+  }
+</style>
 </head>
 <body>
+<div class="wrap">
 
-  <div class="card">
-    <h2>1. Configuration</h2>
-    <div class="grid">
-      <div>
-        <label>Gemini API Key:</label>
-        <input type="password" id="apiKey" placeholder="Enter API Key" />
-      </div>
-      <div>
-        <label>My Native Language (What I want to hear):</label>
-        <select id="myLang">
-          <option value="ms">Malay (Bahasa Melayu)</option>
-          <option value="bn">Bangla (বাংলা)</option>
-        </select>
-      </div>
+  <header>
+    <h1>Live Malay–Bangla interpreter call</h1>
+    <p>Set up your language, share your connection code, then call.</p>
+  </header>
+
+  <!-- Step 1: Language + API key -->
+  <section class="step" id="stepConfig">
+    <div class="step-head">
+      <span class="step-num">1</span>
+      <h2>Choose your language</h2>
     </div>
-  </div>
 
-  <div class="card">
-    <h2>2. Connection Setup (WebRTC)</h2>
-    <p>Your Peer ID: <strong id="myPeerId">Generating...</strong></p>
-    <div class="grid">
-      <div>
-        <input type="text" id="remotePeerId" placeholder="Paste Remote Peer ID here" />
-      </div>
-      <div>
-        <button id="connectBtn">Call Peer</button>
-      </div>
+    <div class="field">
+      <label for="myLang">Language you want to hear</label>
+      <select id="myLang">
+        <option value="ms">Malay (Bahasa Melayu)</option>
+        <option value="bn">Bangla (বাংলা)</option>
+      </select>
+      <p class="hint">Whatever the other person says will be translated into this language for you.</p>
     </div>
-  </div>
 
-  <div class="card">
-    <h2>3. Live Speech Translation Log</h2>
-    <div id="logs">System ready. Set configuration and connect.</div>
-  </div>
+    <div class="field">
+      <label for="apiKey">Gemini API key</label>
+      <input type="password" id="apiKey" placeholder="Paste your API key" autocomplete="off" />
+      <p class="hint">Stored only in this browser tab. Never sent anywhere except Google's API.</p>
+    </div>
+  </section>
+
+  <!-- Step 2: Share your ID -->
+  <section class="step" id="stepShare">
+    <div class="step-head">
+      <span class="step-num">2</span>
+      <h2>Share your connection code</h2>
+    </div>
+
+    <div class="status-line">
+      <span class="dot connecting" id="peerDot"></span>
+      <span id="peerStatusText">Getting your connection code…</span>
+    </div>
+
+    <div class="id-box">
+      <code id="myPeerId">–</code>
+      <button type="button" id="copyBtn" class="secondary" disabled>Copy</button>
+    </div>
+    <p class="hint">Send this code to the person you're calling, or paste theirs below.</p>
+  </section>
+
+  <!-- Step 3: Connect -->
+  <section class="step" id="stepConnect" data-disabled="true">
+    <div class="step-head">
+      <span class="step-num">3</span>
+      <h2>Start the call</h2>
+    </div>
+
+    <div class="field">
+      <label for="remotePeerId">Their connection code</label>
+      <input type="text" id="remotePeerId" placeholder="Paste their code here" autocomplete="off" />
+    </div>
+
+    <div class="status-line">
+      <span class="dot" id="callDot"></span>
+      <span id="callStatusText">Not connected</span>
+    </div>
+
+    <div class="controls">
+      <button type="button" id="connectBtn">Call</button>
+      <button type="button" id="muteBtn" class="secondary" disabled>Mute mic</button>
+      <button type="button" id="hangupBtn" class="danger" disabled>Hang up</button>
+    </div>
+  </section>
+
+  <!-- Step 4: Log -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">4</span>
+      <h2>Activity log</h2>
+    </div>
+    <div id="logs"></div>
+  </section>
 
   <audio id="remoteAudio" autoplay style="display:none;"></audio>
 
-  <script>
-    let peer = null;
-    let peerCall = null;
-    let ws = null;
-    let myAudioContext = null;
-    let translationAudioContext = null;
-    let nextAudioTime = 0;
+  <footer>Runs entirely in your browser. Close the tab to end everything.</footer>
+</div>
 
-    const apiKeyInput = document.getElementById('apiKey');
-    const myLangSelect = document.getElementById('myLang');
-    const myPeerIdEl = document.getElementById('myPeerId');
-    const remotePeerIdInput = document.getElementById('remotePeerId');
-    const connectBtn = document.getElementById('connectBtn');
-    const logsEl = document.getElementById('logs');
-    const remoteAudioEl = document.getElementById('remoteAudio');
+<script>
+(function () {
+  let peer = null;
+  let activeCall = null;
+  let localStream = null;
+  let ws = null;
+  let micAudioContext = null;
+  let playbackAudioContext = null;
+  let nextAudioTime = 0;
+  let micMuted = false;
 
-    function log(msg) {
-      logsEl.innerText += '\n' + msg;
-      logsEl.scrollTop = logsEl.scrollHeight;
+  const el = (id) => document.getElementById(id);
+
+  const apiKeyInput   = el('apiKey');
+  const myLangSelect  = el('myLang');
+  const myPeerIdEl    = el('myPeerId');
+  const copyBtn       = el('copyBtn');
+  const peerDot       = el('peerDot');
+  const peerStatusText = el('peerStatusText');
+  const stepConnect   = el('stepConnect');
+  const remotePeerIdInput = el('remotePeerId');
+  const connectBtn    = el('connectBtn');
+  const muteBtn       = el('muteBtn');
+  const hangupBtn      = el('hangupBtn');
+  const callDot       = el('callDot');
+  const callStatusText = el('callStatusText');
+  const logsEl        = el('logs');
+  const remoteAudioEl = el('remoteAudio');
+
+  function log(msg, level) {
+    const line = document.createElement('div');
+    line.className = 'log-entry' + (level ? ' ' + level : '');
+    const time = new Date().toLocaleTimeString();
+    line.textContent = `[${time}] ${msg}`;
+    logsEl.appendChild(line);
+    logsEl.scrollTop = logsEl.scrollHeight;
+  }
+
+  function setPeerStatus(state, text) {
+    peerDot.className = 'dot ' + state;
+    peerStatusText.textContent = text;
+  }
+
+  function setCallStatus(state, text) {
+    callDot.className = 'dot ' + state;
+    callStatusText.textContent = text;
+  }
+
+  // ---- Step 1→2: bring up the PeerJS connection ----
+  peer = new Peer();
+
+  peer.on('open', (id) => {
+    myPeerIdEl.textContent = id;
+    copyBtn.disabled = false;
+    setPeerStatus('connected', 'Ready — share this code to receive a call');
+    stepConnect.dataset.disabled = 'false';
+    log('Connection code ready: ' + id);
+  });
+
+  peer.on('error', (err) => {
+    setPeerStatus('error', 'Connection setup failed');
+    log('Peer error: ' + err.type, 'err');
+  });
+
+  peer.on('disconnected', () => {
+    setPeerStatus('error', 'Disconnected — reload the page to reconnect');
+    log('Peer disconnected from signaling server', 'warn');
+  });
+
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(myPeerIdEl.textContent);
+      const original = copyBtn.textContent;
+      copyBtn.textContent = 'Copied';
+      setTimeout(() => (copyBtn.textContent = original), 1200);
+    } catch {
+      log('Could not copy automatically — select the code manually.', 'warn');
+    }
+  });
+
+  // ---- Incoming call ----
+  peer.on('call', async (call) => {
+    if (activeCall) {
+      log('Incoming call ignored — already in a call.', 'warn');
+      return;
+    }
+    if (!apiKeyInput.value.trim()) {
+      log('Incoming call received, but no Gemini API key is set. Add it in step 1 first.', 'err');
+      return;
+    }
+    log('Incoming call — answering…');
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      call.answer(localStream);
+      bindCall(call);
+    } catch (err) {
+      log('Microphone access denied — cannot answer the call.', 'err');
+    }
+  });
+
+  // ---- Outgoing call ----
+  connectBtn.addEventListener('click', async () => {
+    const remoteId = remotePeerIdInput.value.trim();
+    if (!remoteId) {
+      log('Enter the other person\'s connection code first.', 'warn');
+      return;
+    }
+    if (!apiKeyInput.value.trim()) {
+      log('Add your Gemini API key in step 1 before calling.', 'warn');
+      return;
     }
 
-    // Initialize PeerJS for 1-on-1 audio connection
-    peer = new Peer();
-    peer.on('open', (id) => {
-      myPeerIdEl.innerText = id;
-      log('✅ WebRTC Peer Ready. ID: ' + id);
-    });
+    connectBtn.disabled = true;
+    setCallStatus('connecting', 'Requesting microphone…');
 
-    peer.on('call', async (call) => {
-      log('📞 Incoming Call Received. Answering...');
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      call.answer(stream);
-      setupCallEvents(call);
-    });
-
-    connectBtn.addEventListener('click', async () => {
-      const remoteId = remotePeerIdInput.value.trim();
-      if (!remoteId) return alert('Enter Remote Peer ID');
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      peerCall = peer.call(remoteId, stream);
-      setupCallEvents(peerCall);
-    });
-
-    function setupCallEvents(call) {
-      initGeminiLive();
-
-      call.on('stream', (remoteStream) => {
-        log('🔊 WebRTC Audio Streaming Active.');
-        
-        // Attach incoming WebRTC raw stream to Gemini Live API for Translation
-        processIncomingAudioStream(remoteStream);
-      });
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setCallStatus('connecting', 'Calling…');
+      const call = peer.call(remoteId, localStream);
+      activeCall = call;
+      bindCall(call);
+    } catch (err) {
+      setCallStatus('error', 'Microphone access denied');
+      log('Microphone permission was denied. Allow mic access and try again.', 'err');
+      connectBtn.disabled = false;
     }
+  });
 
-    // Connect to Gemini Live Translate API
-    function initGeminiLive() {
-      const apiKey = apiKeyInput.value.trim();
-      const myTargetLang = myLangSelect.value; // Language this user wants to HEAR
+  function bindCall(call) {
+    activeCall = call;
+    initGeminiLive();
 
-      if (!apiKey) return alert('Please input your Gemini API Key');
+    call.on('stream', (remoteStream) => {
+      remoteAudioEl.srcObject = remoteStream;
+      setCallStatus('connected', 'Connected — translating live');
+      log('Audio stream connected.');
+      processIncomingAudioStream(remoteStream);
+      connectBtn.disabled = true;
+      muteBtn.disabled = false;
+      hangupBtn.disabled = false;
+    });
 
-      const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
-      ws = new WebSocket(url);
+    call.on('close', () => {
+      endCall('Call ended.');
+    });
 
-      ws.onopen = () => {
-        log('🌐 Connected to Gemini Live API Endpoint.');
-        
-        // Configure Gemini 3.5 Live Translate Engine
-        const setupPayload = {
-          setup: {
-            model: "models/gemini-3.5-live-translate-preview",
-            generationConfig: {
-              responseModalities: ["AUDIO"],
-              translationConfig: {
-                targetLanguageCode: myTargetLang
-              }
-            }
+    call.on('error', (err) => {
+      log('Call error: ' + err, 'err');
+      endCall('Call dropped due to an error.');
+    });
+  }
+
+  muteBtn.addEventListener('click', () => {
+    if (!localStream) return;
+    micMuted = !micMuted;
+    localStream.getAudioTracks().forEach((t) => (t.enabled = !micMuted));
+    muteBtn.textContent = micMuted ? 'Unmute mic' : 'Mute mic';
+    log(micMuted ? 'Microphone muted.' : 'Microphone unmuted.');
+  });
+
+  hangupBtn.addEventListener('click', () => {
+    if (activeCall) activeCall.close();
+    endCall('Call ended.');
+  });
+
+  function endCall(message) {
+    if (ws) { ws.close(); ws = null; }
+    if (localStream) {
+      localStream.getTracks().forEach((t) => t.stop());
+      localStream = null;
+    }
+    activeCall = null;
+    micMuted = false;
+    muteBtn.textContent = 'Mute mic';
+    connectBtn.disabled = false;
+    muteBtn.disabled = true;
+    hangupBtn.disabled = true;
+    setCallStatus('', 'Not connected');
+    log(message);
+  }
+
+  // ---- Gemini Live translation socket ----
+  function initGeminiLive() {
+    const apiKey = apiKeyInput.value.trim();
+    const myTargetLang = myLangSelect.value;
+
+    const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      log('Connected to Gemini Live translation endpoint.');
+      const setupPayload = {
+        setup: {
+          model: 'models/gemini-3.5-live-translate-preview',
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            translationConfig: { targetLanguageCode: myTargetLang }
           }
-        };
-        ws.send(JSON.stringify(setupPayload));
-        log(`🎯 Gemini Configured to translate incoming speech to: [${myTargetLang}]`);
-      };
-
-      ws.onmessage = (event) => {
-        const response = JSON.parse(event.data);
-
-        // Process Translated Audio stream from Gemini
-        if (response.serverContent?.modelTurn?.parts) {
-          response.serverContent.modelTurn.parts.forEach(part => {
-            if (part.text) {
-              log('💬 Translation Text: ' + part.text);
-            }
-            if (part.inlineData && part.inlineData.mimeType.startsWith('audio/pcm')) {
-              playTranslatedAudioChunk(part.inlineData.data);
-            }
-          });
         }
       };
+      ws.send(JSON.stringify(setupPayload));
+      log('Translating incoming speech to: ' + myTargetLang);
+    };
 
-      ws.onerror = (err) => log('❌ Gemini WS Error');
-    }
-
-    // Capture Incoming WebRTC stream -> Pipe PCM 16kHz to Gemini WebSocket
-    function processIncomingAudioStream(stream) {
-      myAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-      const source = myAudioContext.createMediaStreamSource(stream);
-      const processor = myAudioContext.createScriptProcessor(4096, 1, 1);
-
-      processor.onaudioprocess = (e) => {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-        const inputData = e.inputBuffer.getChannelData(0);
-        const pcm16 = floatTo16BitPCM(inputData);
-        const base64Audio = arrayBufferToBase64(pcm16.buffer);
-
-        // Stream audio chunk to Gemini
-        ws.send(JSON.stringify({
-          realtimeInput: {
-            mediaChunks: [{
-              mimeType: "audio/pcm;rate=16000",
-              data: base64Audio
-            }]
+    ws.onmessage = (event) => {
+      const response = JSON.parse(event.data);
+      if (response.serverContent?.modelTurn?.parts) {
+        response.serverContent.modelTurn.parts.forEach((part) => {
+          if (part.text) log('Translation: ' + part.text);
+          if (part.inlineData && part.inlineData.mimeType.startsWith('audio/pcm')) {
+            playTranslatedAudioChunk(part.inlineData.data);
           }
-        }));
-      };
-
-      source.connect(processor);
-      processor.connect(myAudioContext.destination);
-    }
-
-    // Playback 24kHz PCM Translated Audio Chunks
-    function playTranslatedAudioChunk(base64Pcm) {
-      if (!translationAudioContext) {
-        translationAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+        });
       }
+    };
 
-      const pcmData = base64ToArrayBuffer(base64Pcm);
-      const int16 = new Int16Array(pcmData);
-      const float32 = new Float32Array(int16.length);
+    ws.onerror = () => log('Gemini connection error — check your API key.', 'err');
+    ws.onclose = () => log('Gemini connection closed.', 'warn');
+  }
 
-      for (let i = 0; i < int16.length; i++) {
-        float32[i] = int16[i] / 32768;
-      }
+  // ---- Audio plumbing ----
+  function processIncomingAudioStream(stream) {
+    micAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    const source = micAudioContext.createMediaStreamSource(stream);
+    const processor = micAudioContext.createScriptProcessor(4096, 1, 1);
 
-      const buffer = translationAudioContext.createBuffer(1, float32.length, 24000);
-      buffer.getChannelData(0).set(float32);
+    processor.onaudioprocess = (e) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const inputData = e.inputBuffer.getChannelData(0);
+      const pcm16 = floatTo16BitPCM(inputData);
+      const base64Audio = arrayBufferToBase64(pcm16.buffer);
+      ws.send(JSON.stringify({
+        realtimeInput: {
+          mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: base64Audio }]
+        }
+      }));
+    };
 
-      const source = translationAudioContext.createBufferSource();
-      source.buffer = buffer;
-      source.connect(translationAudioContext.destination);
+    source.connect(processor);
+    processor.connect(micAudioContext.destination);
+  }
 
-      const currentTime = translationAudioContext.currentTime;
-      if (nextAudioTime < currentTime) nextAudioTime = currentTime;
-      
-      source.start(nextAudioTime);
-      nextAudioTime += buffer.duration;
+  function playTranslatedAudioChunk(base64Pcm) {
+    if (!playbackAudioContext) {
+      playbackAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
     }
+    const pcmData = base64ToArrayBuffer(base64Pcm);
+    const int16 = new Int16Array(pcmData);
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
 
-    // Utility Functions
-    function floatTo16BitPCM(output) {
-      let len = output.length;
-      let buf = new Int16Array(len);
-      while (len--) {
-        buf[len] = Math.min(1, Math.max(-1, output[len])) * 0x7FFF;
-      }
-      return buf;
-    }
+    const buffer = playbackAudioContext.createBuffer(1, float32.length, 24000);
+    buffer.getChannelData(0).set(float32);
 
-    function arrayBufferToBase64(buffer) {
-      let binary = '';
-      let bytes = new Uint8Array(buffer);
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      return window.btoa(binary);
-    }
+    const source = playbackAudioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(playbackAudioContext.destination);
 
-    function base64ToArrayBuffer(base64) {
-      let binaryString = window.atob(base64);
-      let len = binaryString.length;
-      let bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      return bytes.buffer;
-    }
-  </script>
+    const currentTime = playbackAudioContext.currentTime;
+    if (nextAudioTime < currentTime) nextAudioTime = currentTime;
+    source.start(nextAudioTime);
+    nextAudioTime += buffer.duration;
+  }
+
+  function floatTo16BitPCM(output) {
+    let len = output.length;
+    const buf = new Int16Array(len);
+    while (len--) buf[len] = Math.min(1, Math.max(-1, output[len])) * 0x7fff;
+    return buf;
+  }
+
+  function arrayBufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return window.btoa(binary);
+  }
+
+  function base64ToArrayBuffer(base64) {
+    const binaryString = window.atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+    return bytes.buffer;
+  }
+})();
+</script>
 </body>
 </html>
