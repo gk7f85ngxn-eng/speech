@@ -686,13 +686,13 @@
           model: 'models/gemini-3.5-live-translate-preview',
           generationConfig: {
             responseModalities: ['AUDIO'],
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
             translationConfig: {
               targetLanguageCode: myTargetLang,
               echoTargetLanguage: true
             }
-          }
+          },
+          inputAudioTranscription: {},
+          outputAudioTranscription: {}
         }
       };
       ws.send(JSON.stringify(setupPayload));
