@@ -275,6 +275,14 @@
       <input type="password" id="apiKey" placeholder="Paste your API key" autocomplete="off" />
       <p class="hint">Stored only in this browser tab. Never sent anywhere except Google's API.</p>
     </div>
+
+    <div class="field">
+      <button type="button" id="testKeyBtn" class="secondary">Test key</button>
+      <div class="status-line" id="keyStatusLine" style="margin-top:0.6rem; margin-bottom:0;">
+        <span class="dot" id="keyDot"></span>
+        <span id="keyStatusText">Not tested yet</span>
+      </div>
+    </div>
   </section>
 
   <!-- Step 2: Share your ID -->
@@ -374,6 +382,9 @@
   const el = (id) => document.getElementById(id);
 
   const apiKeyInput   = el('apiKey');
+  const testKeyBtn    = el('testKeyBtn');
+  const keyDot        = el('keyDot');
+  const keyStatusText = el('keyStatusText');
   const myLangSelect  = el('myLang');
   const myPeerIdEl    = el('myPeerId');
   const copyBtn       = el('copyBtn');
@@ -412,6 +423,66 @@
     callDot.className = 'dot ' + state;
     callStatusText.textContent = text;
   }
+
+  function setKeyStatus(state, text) {
+    keyDot.className = 'dot ' + state;
+    keyStatusText.textContent = text;
+  }
+
+  apiKeyInput.addEventListener('input', () => {
+    setKeyStatus('', 'Not tested yet');
+  });
+
+  testKeyBtn.addEventListener('click', () => {
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+      setKeyStatus('error', 'Enter a key first');
+      return;
+    }
+
+    testKeyBtn.disabled = true;
+    setKeyStatus('connecting', 'Testing…');
+    log('Testing Gemini API key…');
+
+    const testUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+    const testWs = new WebSocket(testUrl);
+    let settled = false;
+
+    const finish = (ok, message) => {
+      if (settled) return;
+      settled = true;
+      testKeyBtn.disabled = false;
+      setKeyStatus(ok ? 'connected' : 'error', message);
+      log(message, ok ? undefined : 'err');
+      try { testWs.close(); } catch { /* ignore */ }
+    };
+
+    const timeout = setTimeout(() => finish(true, 'Key looks valid'), 4000);
+
+    testWs.onopen = () => {
+      testWs.send(JSON.stringify({
+        setup: {
+          model: 'models/gemini-3.5-live-translate-preview',
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            translationConfig: { targetLanguageCode: 'en' }
+          }
+        }
+      }));
+    };
+
+    testWs.onerror = () => {
+      clearTimeout(timeout);
+      finish(false, 'Key test failed — connection error');
+    };
+
+    testWs.onclose = (event) => {
+      clearTimeout(timeout);
+      if (!settled) {
+        finish(false, 'Key rejected (code ' + event.code + ')');
+      }
+    };
+  });
 
   // ---- Step 1→2: bring up the PeerJS connection ----
   peer = new Peer();
@@ -532,7 +603,18 @@
     activeCall = call;
     initGeminiLive();
 
+    // Let the user abort a stuck/never-connecting call instead of being
+    // stuck forever, which also frees the app to accept future calls.
+    hangupBtn.disabled = false;
+    const connectTimeout = setTimeout(() => {
+      if (activeCall === call) {
+        log('Call timed out — no response.', 'err');
+        endCall('Call ended.');
+      }
+    }, 20000);
+
     call.on('stream', (remoteStream) => {
+      clearTimeout(connectTimeout);
       remoteAudioEl.srcObject = remoteStream;
       setCallStatus('connected', 'Connected — translating live');
       log('Audio stream connected.');
@@ -543,10 +625,12 @@
     });
 
     call.on('close', () => {
+      clearTimeout(connectTimeout);
       endCall('Call ended.');
     });
 
     call.on('error', (err) => {
+      clearTimeout(connectTimeout);
       log('Call error: ' + err, 'err');
       endCall('Call dropped due to an error.');
     });
@@ -561,7 +645,9 @@
   });
 
   hangupBtn.addEventListener('click', () => {
-    if (activeCall) activeCall.close();
+    if (activeCall) {
+      try { activeCall.close(); } catch { /* ignore */ }
+    }
     endCall('Call ended.');
   });
 
