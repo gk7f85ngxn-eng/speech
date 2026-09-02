@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Malay-Bangla Interpreter Call</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background: #f4f6f8;
+    }
+    .card {
+      background: #fff;
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      margin-bottom: 1rem;
+    }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    label { display: block; margin-bottom: 0.3rem; font-weight: bold; }
+    input, select, button {
+      width: 100%;
+      padding: 0.6rem;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+      margin-bottom: 0.8rem;
+    }
+    button { background: #0066ff; color: #fff; font-weight: bold; border: none; cursor: pointer; }
+    button:disabled { background: #999; }
+    #logs {
+      background: #1e1e1e;
+      color: #00ff88;
+      font-family: monospace;
+      padding: 1rem;
+      border-radius: 8px;
+      height: 250px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>1. Configuration</h2>
+    <div class="grid">
+      <div>
+        <label>Gemini API Key:</label>
+        <input type="password" id="apiKey" placeholder="Enter API Key" />
+      </div>
+      <div>
+        <label>My Native Language (What I want to hear):</label>
+        <select id="myLang">
+          <option value="ms">Malay (Bahasa Melayu)</option>
+          <option value="bn">Bangla (বাংলা)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. Connection Setup (WebRTC)</h2>
+    <p>Your Peer ID: <strong id="myPeerId">Generating...</strong></p>
+    <div class="grid">
+      <div>
+        <input type="text" id="remotePeerId" placeholder="Paste Remote Peer ID here" />
+      </div>
+      <div>
+        <button id="connectBtn">Call Peer</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. Live Speech Translation Log</h2>
+    <div id="logs">System ready. Set configuration and connect.</div>
+  </div>
+
+  <audio id="remoteAudio" autoplay style="display:none;"></audio>
+
+  <script>
+    let peer = null;
+    let peerCall = null;
+    let ws = null;
+    let myAudioContext = null;
+    let translationAudioContext = null;
+    let nextAudioTime = 0;
+
+    const apiKeyInput = document.getElementById('apiKey');
+    const myLangSelect = document.getElementById('myLang');
+    const myPeerIdEl = document.getElementById('myPeerId');
+    const remotePeerIdInput = document.getElementById('remotePeerId');
+    const connectBtn = document.getElementById('connectBtn');
+    const logsEl = document.getElementById('logs');
+    const remoteAudioEl = document.getElementById('remoteAudio');
+
+    function log(msg) {
+      logsEl.innerText += '\n' + msg;
+      logsEl.scrollTop = logsEl.scrollHeight;
+    }
+
+    // Initialize PeerJS for 1-on-1 audio connection
+    peer = new Peer();
+    peer.on('open', (id) => {
+      myPeerIdEl.innerText = id;
+      log('✅ WebRTC Peer Ready. ID: ' + id);
+    });
+
+    peer.on('call', async (call) => {
+      log('📞 Incoming Call Received. Answering...');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      call.answer(stream);
+      setupCallEvents(call);
+    });
+
+    connectBtn.addEventListener('click', async () => {
+      const remoteId = remotePeerIdInput.value.trim();
+      if (!remoteId) return alert('Enter Remote Peer ID');
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      peerCall = peer.call(remoteId, stream);
+      setupCallEvents(peerCall);
+    });
+
+    function setupCallEvents(call) {
+      initGeminiLive();
+
+      call.on('stream', (remoteStream) => {
+        log('🔊 WebRTC Audio Streaming Active.');
+        
+        // Attach incoming WebRTC raw stream to Gemini Live API for Translation
+        processIncomingAudioStream(remoteStream);
+      });
+    }
+
+    // Connect to Gemini Live Translate API
+    function initGeminiLive() {
+      const apiKey = apiKeyInput.value.trim();
+      const myTargetLang = myLangSelect.value; // Language this user wants to HEAR
+
+      if (!apiKey) return alert('Please input your Gemini API Key');
+
+      const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        log('🌐 Connected to Gemini Live API Endpoint.');
+        
+        // Configure Gemini 3.5 Live Translate Engine
+        const setupPayload = {
+          setup: {
+            model: "models/gemini-3.5-live-translate-preview",
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              translationConfig: {
+                targetLanguageCode: myTargetLang
+              }
+            }
+          }
+        };
+        ws.send(JSON.stringify(setupPayload));
+        log(`🎯 Gemini Configured to translate incoming speech to: [${myTargetLang}]`);
+      };
+
+      ws.onmessage = (event) => {
+        const response = JSON.parse(event.data);
+
+        // Process Translated Audio stream from Gemini
+        if (response.serverContent?.modelTurn?.parts) {
+          response.serverContent.modelTurn.parts.forEach(part => {
+            if (part.text) {
+              log('💬 Translation Text: ' + part.text);
+            }
+            if (part.inlineData && part.inlineData.mimeType.startsWith('audio/pcm')) {
+              playTranslatedAudioChunk(part.inlineData.data);
+            }
+          });
+        }
+      };
+
+      ws.onerror = (err) => log('❌ Gemini WS Error');
+    }
+
+    // Capture Incoming WebRTC stream -> Pipe PCM 16kHz to Gemini WebSocket
+    function processIncomingAudioStream(stream) {
+      myAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      const source = myAudioContext.createMediaStreamSource(stream);
+      const processor = myAudioContext.createScriptProcessor(4096, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+        const inputData = e.inputBuffer.getChannelData(0);
+        const pcm16 = floatTo16BitPCM(inputData);
+        const base64Audio = arrayBufferToBase64(pcm16.buffer);
+
+        // Stream audio chunk to Gemini
+        ws.send(JSON.stringify({
+          realtimeInput: {
+            mediaChunks: [{
+              mimeType: "audio/pcm;rate=16000",
+              data: base64Audio
+            }]
+          }
+        }));
+      };
+
+      source.connect(processor);
+      processor.connect(myAudioContext.destination);
+    }
+
+    // Playback 24kHz PCM Translated Audio Chunks
+    function playTranslatedAudioChunk(base64Pcm) {
+      if (!translationAudioContext) {
+        translationAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+      }
+
+      const pcmData = base64ToArrayBuffer(base64Pcm);
+      const int16 = new Int16Array(pcmData);
+      const float32 = new Float32Array(int16.length);
+
+      for (let i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 32768;
+      }
+
+      const buffer = translationAudioContext.createBuffer(1, float32.length, 24000);
+      buffer.getChannelData(0).set(float32);
+
+      const source = translationAudioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(translationAudioContext.destination);
+
+      const currentTime = translationAudioContext.currentTime;
+      if (nextAudioTime < currentTime) nextAudioTime = currentTime;
+      
+      source.start(nextAudioTime);
+      nextAudioTime += buffer.duration;
+    }
+
+    // Utility Functions
+    function floatTo16BitPCM(output) {
+      let len = output.length;
+      let buf = new Int16Array(len);
+      while (len--) {
+        buf[len] = Math.min(1, Math.max(-1, output[len])) * 0x7FFF;
+      }
+      return buf;
+    }
+
+    function arrayBufferToBase64(buffer) {
+      let binary = '';
+      let bytes = new Uint8Array(buffer);
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return window.btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+      let binaryString = window.atob(base64);
+      let len = binaryString.length;
+      let bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+  </script>
+</body>
+</html>
