@@ -320,6 +320,19 @@
     </div>
   </section>
 
+  <!-- Incoming call prompt (hidden until a call arrives) -->
+  <section class="step" id="stepIncoming" style="display:none; border-color: var(--live);">
+    <div class="step-head">
+      <span class="step-num">☎</span>
+      <h2>Incoming call</h2>
+    </div>
+    <p class="hint" style="margin-bottom:0.9rem;">Tap Answer to allow microphone and audio access — this has to be a manual tap on iPhone/iPad.</p>
+    <div class="controls">
+      <button type="button" id="answerBtn">Answer</button>
+      <button type="button" id="declineBtn" class="secondary">Decline</button>
+    </div>
+  </section>
+
   <!-- Step 4: Log -->
   <section class="step">
     <div class="step-head">
@@ -362,6 +375,11 @@
   const callStatusText = el('callStatusText');
   const logsEl        = el('logs');
   const remoteAudioEl = el('remoteAudio');
+  const stepIncoming  = el('stepIncoming');
+  const answerBtn     = el('answerBtn');
+  const declineBtn    = el('declineBtn');
+
+  let pendingCall = null;
 
   function log(msg, level) {
     const line = document.createElement('div');
@@ -414,24 +432,57 @@
     }
   });
 
-  // ---- Incoming call ----
-  peer.on('call', async (call) => {
-    if (activeCall) {
+  // ---- Incoming call: wait for an explicit tap (required by iOS Safari) ----
+  peer.on('call', (call) => {
+    if (activeCall || pendingCall) {
       log('Incoming call ignored — already in a call.', 'warn');
+      call.close();
       return;
     }
     if (!apiKeyInput.value.trim()) {
       log('Incoming call received, but no Gemini API key is set. Add it in step 1 first.', 'err');
+      call.close();
       return;
     }
-    log('Incoming call — answering…');
+    pendingCall = call;
+    stepIncoming.style.display = 'block';
+    stepIncoming.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    log('Incoming call — tap Answer to accept.');
+
+    call.on('close', () => {
+      if (pendingCall === call) {
+        pendingCall = null;
+        stepIncoming.style.display = 'none';
+      }
+    });
+  });
+
+  answerBtn.addEventListener('click', async () => {
+    if (!pendingCall) return;
+    const call = pendingCall;
+    stepIncoming.style.display = 'none';
     try {
+      // Unlock audio playback on this user gesture (needed on iOS Safari)
+      remoteAudioEl.muted = false;
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       call.answer(localStream);
       bindCall(call);
+      pendingCall = null;
+      log('Call answered.');
     } catch (err) {
       log('Microphone access denied — cannot answer the call.', 'err');
+      call.close();
+      pendingCall = null;
     }
+  });
+
+  declineBtn.addEventListener('click', () => {
+    if (pendingCall) {
+      pendingCall.close();
+      pendingCall = null;
+    }
+    stepIncoming.style.display = 'none';
+    log('Call declined.');
   });
 
   // ---- Outgoing call ----
