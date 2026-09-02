@@ -350,7 +350,7 @@
     <div id="logs"></div>
   </section>
 
-  <audio id="remoteAudio" autoplay style="display:none;"></audio>
+  <audio id="remoteAudio" autoplay muted style="display:none;"></audio></audio>
 
   <footer>Runs entirely in your browser. Close the tab to end everything.</footer>
 </div>
@@ -546,8 +546,9 @@
     const call = pendingCall;
     stepIncoming.style.display = 'none';
     try {
-      // Unlock audio capture/playback on this user gesture (needed on iOS Safari)
-      remoteAudioEl.muted = false;
+      // Unlock audio capture/playback on this user gesture (needed on iOS Safari).
+      // remoteAudioEl itself must stay muted — it's only a stream source for
+      // capture, not meant to be heard. Only translated audio should play.
       await unlockAudioContexts();
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       call.answer(localStream);
@@ -717,7 +718,9 @@
     };
 
     ws.onerror = () => log('Gemini connection error — check your API key.', 'err');
-    ws.onclose = () => log('Gemini connection closed.', 'warn');
+    ws.onclose = (event) => {
+      log(`Gemini connection closed (code ${event.code}${event.reason ? ': ' + event.reason : ''}).`, 'warn');
+    };
   }
 
   // ---- Audio plumbing ----
