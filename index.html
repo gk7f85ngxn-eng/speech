@@ -561,6 +561,16 @@
   });
 
   peer.on('error', (err) => {
+    if (err.type === 'peer-unavailable') {
+      log("That code doesn't match anyone currently online right now — ask them to re-share their current code.", 'err');
+      if (activeCall) {
+        endCall('Call ended — code not found.');
+      } else {
+        connectBtn.disabled = false;
+        setCallStatus('error', 'Code not found');
+      }
+      return;
+    }
     setPeerStatus('error', 'Connection setup failed');
     log('Peer error: ' + err.type, 'err');
   });
