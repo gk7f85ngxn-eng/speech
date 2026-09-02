@@ -358,6 +358,19 @@
   let nextAudioTime = 0;
   let micMuted = false;
 
+  // Must run inside a direct tap handler on iOS/Safari, or the contexts
+  // stay 'suspended' forever and audio silently never plays.
+  async function unlockAudioContexts() {
+    if (!micAudioContext) {
+      micAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    }
+    if (!playbackAudioContext) {
+      playbackAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+    }
+    if (micAudioContext.state === 'suspended') await micAudioContext.resume();
+    if (playbackAudioContext.state === 'suspended') await playbackAudioContext.resume();
+  }
+
   const el = (id) => document.getElementById(id);
 
   const apiKeyInput   = el('apiKey');
@@ -462,8 +475,9 @@
     const call = pendingCall;
     stepIncoming.style.display = 'none';
     try {
-      // Unlock audio playback on this user gesture (needed on iOS Safari)
+      // Unlock audio capture/playback on this user gesture (needed on iOS Safari)
       remoteAudioEl.muted = false;
+      await unlockAudioContexts();
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       call.answer(localStream);
       bindCall(call);
@@ -501,6 +515,7 @@
     setCallStatus('connecting', 'Requesting microphone…');
 
     try {
+      await unlockAudioContexts();
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       setCallStatus('connecting', 'Calling…');
       const call = peer.call(remoteId, localStream);
@@ -556,6 +571,9 @@
       localStream.getTracks().forEach((t) => t.stop());
       localStream = null;
     }
+    if (micAudioContext) { micAudioContext.close(); micAudioContext = null; }
+    if (playbackAudioContext) { playbackAudioContext.close(); playbackAudioContext = null; }
+    nextAudioTime = 0;
     activeCall = null;
     micMuted = false;
     muteBtn.textContent = 'Mute mic';
@@ -607,7 +625,11 @@
 
   // ---- Audio plumbing ----
   function processIncomingAudioStream(stream) {
-    micAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    if (!micAudioContext) {
+      // Fallback in case unlockAudioContexts() wasn't called first — will be
+      // suspended on iOS until a tap resumes it.
+      micAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    }
     const source = micAudioContext.createMediaStreamSource(stream);
     const processor = micAudioContext.createScriptProcessor(4096, 1, 1);
 
@@ -629,6 +651,7 @@
 
   function playTranslatedAudioChunk(base64Pcm) {
     if (!playbackAudioContext) {
+      // Fallback — will be suspended on iOS until a tap resumes it.
       playbackAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
     }
     const pcmData = base64ToArrayBuffer(base64Pcm);
