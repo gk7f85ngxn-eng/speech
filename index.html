@@ -302,7 +302,7 @@
     <div class="field">
       <label for="apiKey">Gemini API key</label>
       <input type="password" id="apiKey" placeholder="Paste your API key" autocomplete="off" />
-      <p class="hint">Stored only in this browser tab. Never sent anywhere except Google's API.</p>
+      <p class="hint">Remembered in this browser so you don't have to retype it after a reload. Never sent anywhere except Google's API.</p>
     </div>
 
     <div class="field">
@@ -496,7 +496,22 @@
 
   apiKeyInput.addEventListener('input', () => {
     setKeyStatus('', 'Not tested yet');
+    try {
+      if (apiKeyInput.value.trim()) {
+        localStorage.setItem('interpreterCallApiKey', apiKeyInput.value.trim());
+      } else {
+        localStorage.removeItem('interpreterCallApiKey');
+      }
+    } catch { /* storage unavailable — key just won't persist across reloads */ }
   });
+
+  try {
+    const savedKey = localStorage.getItem('interpreterCallApiKey');
+    if (savedKey) {
+      apiKeyInput.value = savedKey;
+      log('Restored saved API key from this browser.');
+    }
+  } catch { /* storage unavailable */ }
 
   testKeyBtn.addEventListener('click', () => {
     const apiKey = apiKeyInput.value.trim();
