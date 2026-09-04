@@ -591,8 +591,9 @@
   });
 
   peer.on('disconnected', () => {
-    setPeerStatus('error', 'Disconnected — reload the page to reconnect');
-    log('Peer disconnected from signaling server', 'warn');
+    setPeerStatus('connecting', 'Connection dropped — reconnecting…');
+    log('Peer disconnected from signaling server — attempting to reconnect…', 'warn');
+    peer.reconnect();
   });
 
   copyBtn.addEventListener('click', async () => {
@@ -778,13 +779,16 @@
           model: 'models/gemini-3.5-live-translate-preview',
           generationConfig: {
             responseModalities: ['AUDIO'],
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
             translationConfig: {
               targetLanguageCode: myTargetLang,
               echoTargetLanguage: true
             }
-          }
+          },
+          // The live API rejects these when nested inside generationConfig
+          // (code 1007, "Cannot find field") despite the docs showing them
+          // nested — confirmed by direct testing. They belong here instead.
+          inputAudioTranscription: {},
+          outputAudioTranscription: {}
         }
       };
       ws.send(JSON.stringify(setupPayload));
