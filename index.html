@@ -797,27 +797,46 @@
 
     ws.onmessage = (event) => {
       const response = JSON.parse(event.data);
+
+      if (response.setupComplete) {
+        log('Gemini setup acknowledged — session ready.');
+        return;
+      }
+
       const content = response.serverContent;
+      let handled = false;
+
       if (content?.inputTranscription?.text) {
+        handled = true;
         const lang = content.inputTranscription.languageCode ? ` (${content.inputTranscription.languageCode})` : '';
         log('Heard: ' + content.inputTranscription.text + lang);
         appendTranscript(inputTranscriptBox, content.inputTranscription.text);
       }
       if (content?.outputTranscription?.text) {
+        handled = true;
         const lang = content.outputTranscription.languageCode ? ` (${content.outputTranscription.languageCode})` : '';
         log('Translated: ' + content.outputTranscription.text + lang);
         appendTranscript(outputTranscriptBox, content.outputTranscription.text);
       }
       if (content?.turnComplete) {
+        handled = true;
         appendTranscript(inputTranscriptBox, ' ');
         appendTranscript(outputTranscriptBox, ' ');
       }
       if (content?.modelTurn?.parts) {
+        handled = true;
         content.modelTurn.parts.forEach((part) => {
           if (part.inlineData && part.inlineData.mimeType.startsWith('audio/pcm')) {
             playTranslatedAudioChunk(part.inlineData.data);
           }
         });
+      }
+
+      // Diagnostic: surface anything we didn't recognize instead of
+      // silently dropping it, so we can see what Gemini is actually saying.
+      if (!handled) {
+        const preview = event.data.length > 200 ? event.data.slice(0, 200) + '…' : event.data;
+        log('Unhandled Gemini message: ' + preview, 'warn');
       }
     };
 
@@ -840,6 +859,7 @@
     const processor = micAudioContext.createScriptProcessor(2048, 1, 1);
 
     let frameCount = 0;
+    let chunksSent = 0;
     let sawSound = false;
 
     processor.onaudioprocess = (e) => {
@@ -860,6 +880,7 @@
         } else if (peak <= 0.02) {
           log('Mic level near silent (peak ' + peak.toFixed(3) + ') — check the source is actually speaking into this side.', 'warn');
         }
+        log(chunksSent + ' audio chunks sent to Gemini so far.');
       }
 
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -870,6 +891,7 @@
           audio: { data: base64Audio, mimeType: 'audio/pcm;rate=16000' }
         }
       }));
+      chunksSent++;
     };
 
     source.connect(processor);
