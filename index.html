@@ -398,7 +398,7 @@
     <div id="logs"></div>
   </section>
 
-  <audio id="remoteAudio" autoplay muted style="display:none;"></audio></audio>
+  <audio id="remoteAudio" autoplay muted style="display:none;"></audio>
 
   <footer>Runs entirely in your browser. Close the tab to end everything.</footer>
 </div>
@@ -697,6 +697,7 @@
 
     // Let the user abort a stuck/never-connecting call instead of being
     // stuck forever, which also frees the app to accept future calls.
+    connectBtn.disabled = true;
     hangupBtn.disabled = false;
     const connectTimeout = setTimeout(() => {
       if (activeCall === call) {
@@ -777,13 +778,13 @@
           model: 'models/gemini-3.5-live-translate-preview',
           generationConfig: {
             responseModalities: ['AUDIO'],
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
             translationConfig: {
               targetLanguageCode: myTargetLang,
               echoTargetLanguage: true
             }
-          },
-          inputAudioTranscription: {},
-          outputAudioTranscription: {}
+          }
         }
       };
       ws.send(JSON.stringify(setupPayload));
@@ -794,11 +795,13 @@
       const response = JSON.parse(event.data);
       const content = response.serverContent;
       if (content?.inputTranscription?.text) {
-        log('Heard: ' + content.inputTranscription.text);
+        const lang = content.inputTranscription.languageCode ? ` (${content.inputTranscription.languageCode})` : '';
+        log('Heard: ' + content.inputTranscription.text + lang);
         appendTranscript(inputTranscriptBox, content.inputTranscription.text);
       }
       if (content?.outputTranscription?.text) {
-        log('Translated: ' + content.outputTranscription.text);
+        const lang = content.outputTranscription.languageCode ? ` (${content.outputTranscription.languageCode})` : '';
+        log('Translated: ' + content.outputTranscription.text + lang);
         appendTranscript(outputTranscriptBox, content.outputTranscription.text);
       }
       if (content?.turnComplete) {
@@ -828,7 +831,9 @@
       micAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
     }
     const source = micAudioContext.createMediaStreamSource(stream);
-    const processor = micAudioContext.createScriptProcessor(4096, 1, 1);
+    // 2048 samples @ 16kHz ≈ 128ms per chunk — closest power-of-2 buffer size
+    // to the ~100ms chunking the Gemini Live API docs recommend (4096 was 256ms).
+    const processor = micAudioContext.createScriptProcessor(2048, 1, 1);
 
     let frameCount = 0;
     let sawSound = false;
