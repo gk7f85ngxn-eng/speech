@@ -771,6 +771,7 @@
 
     const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
     ws = new WebSocket(url);
+    ws.binaryType = 'blob';
 
     ws.onopen = () => {
       log('Connected to Gemini Live translation endpoint.');
@@ -795,48 +796,62 @@
       log('Translating incoming speech to: ' + myTargetLang);
     };
 
-    ws.onmessage = (event) => {
-      const response = JSON.parse(event.data);
+    ws.onmessage = async (event) => {
+      let raw = event.data;
+      try {
+        // Gemini may send frames as a Blob rather than plain text — if we
+        // don't handle that, JSON.parse throws immediately and silently on
+        // every single message, with nothing showing up in this log at all.
+        if (raw instanceof Blob) {
+          raw = await raw.text();
+        }
+        const response = JSON.parse(raw);
 
-      if (response.setupComplete) {
-        log('Gemini setup acknowledged — session ready.');
-        return;
-      }
+        if (response.setupComplete) {
+          log('Gemini setup acknowledged — session ready.');
+          return;
+        }
 
-      const content = response.serverContent;
-      let handled = false;
+        const content = response.serverContent;
+        let handled = false;
 
-      if (content?.inputTranscription?.text) {
-        handled = true;
-        const lang = content.inputTranscription.languageCode ? ` (${content.inputTranscription.languageCode})` : '';
-        log('Heard: ' + content.inputTranscription.text + lang);
-        appendTranscript(inputTranscriptBox, content.inputTranscription.text);
-      }
-      if (content?.outputTranscription?.text) {
-        handled = true;
-        const lang = content.outputTranscription.languageCode ? ` (${content.outputTranscription.languageCode})` : '';
-        log('Translated: ' + content.outputTranscription.text + lang);
-        appendTranscript(outputTranscriptBox, content.outputTranscription.text);
-      }
-      if (content?.turnComplete) {
-        handled = true;
-        appendTranscript(inputTranscriptBox, ' ');
-        appendTranscript(outputTranscriptBox, ' ');
-      }
-      if (content?.modelTurn?.parts) {
-        handled = true;
-        content.modelTurn.parts.forEach((part) => {
-          if (part.inlineData && part.inlineData.mimeType.startsWith('audio/pcm')) {
-            playTranslatedAudioChunk(part.inlineData.data);
-          }
-        });
-      }
+        if (content?.inputTranscription?.text) {
+          handled = true;
+          const lang = content.inputTranscription.languageCode ? ` (${content.inputTranscription.languageCode})` : '';
+          log('Heard: ' + content.inputTranscription.text + lang);
+          appendTranscript(inputTranscriptBox, content.inputTranscription.text);
+        }
+        if (content?.outputTranscription?.text) {
+          handled = true;
+          const lang = content.outputTranscription.languageCode ? ` (${content.outputTranscription.languageCode})` : '';
+          log('Translated: ' + content.outputTranscription.text + lang);
+          appendTranscript(outputTranscriptBox, content.outputTranscription.text);
+        }
+        if (content?.turnComplete) {
+          handled = true;
+          appendTranscript(inputTranscriptBox, ' ');
+          appendTranscript(outputTranscriptBox, ' ');
+        }
+        if (content?.modelTurn?.parts) {
+          handled = true;
+          content.modelTurn.parts.forEach((part) => {
+            if (part.inlineData && part.inlineData.mimeType.startsWith('audio/pcm')) {
+              playTranslatedAudioChunk(part.inlineData.data);
+            }
+          });
+        }
 
-      // Diagnostic: surface anything we didn't recognize instead of
-      // silently dropping it, so we can see what Gemini is actually saying.
-      if (!handled) {
-        const preview = event.data.length > 200 ? event.data.slice(0, 200) + '…' : event.data;
-        log('Unhandled Gemini message: ' + preview, 'warn');
+        // Diagnostic: surface anything we didn't recognize instead of
+        // silently dropping it, so we can see what Gemini is actually saying.
+        if (!handled) {
+          const preview = raw.length > 200 ? raw.slice(0, 200) + '…' : raw;
+          log('Unhandled Gemini message: ' + preview, 'warn');
+        }
+      } catch (err) {
+        // This is the safety net that was missing: any parse failure now
+        // shows up here instead of vanishing into the browser console.
+        const preview = typeof raw === 'string' ? raw.slice(0, 150) : '[binary data, ' + (raw?.size ?? '?') + ' bytes]';
+        log('Failed to read Gemini message (' + err.message + '): ' + preview, 'err');
       }
     };
 
